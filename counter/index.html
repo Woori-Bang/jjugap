@@ -1,0 +1,414 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>방울 쭈갑 카운터</title>
+<script src="../config.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+body{margin:0}
+/* Layout: one-hand boat-deck tool. Species tiles are giant tap targets; stats strip on top, log/history below. */
+:root{
+  --bg:#e9eff1;        /* 해무 낀 아침 바다 */
+  --panel:#ffffff;
+  --ink:#10232c;
+  --muted:#5b707a;
+  --line:#cfdbe0;
+  --c1:#e2553b;        /* 쭈꾸미: 에기 주황 */
+  --c2:#7a3b52;        /* 갑오징어: 적갈 */
+  --c3:#2f8f86;        /* 추가 어종: 해초 */
+  --c4:#c98a12;
+  --onc:#ffffff;
+  --danger:#b3261e;
+  --display:"Black Han Sans","Noto Sans KR",system-ui,sans-serif;
+  --body:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0b1a21;--panel:#132a33;--ink:#e6f0f2;--muted:#8fa6ae;--line:#24424d;
+  --c1:#f06a4f;--c2:#b0607e;--c3:#3fb3a8;--c4:#e0a630;--onc:#0b1a21;--danger:#ff8a80;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0b1a21;--panel:#132a33;--ink:#e6f0f2;--muted:#8fa6ae;--line:#24424d;
+  --c1:#f06a4f;--c2:#b0607e;--c3:#3fb3a8;--c4:#e0a630;--onc:#0b1a21;--danger:#ff8a80;color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;-webkit-tap-highlight-color:transparent}
+.wrap{max-width:560px;margin:0 auto;padding-block:12px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px}
+button{font-family:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:focus-visible,input:focus-visible{outline:3px solid var(--c3);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+
+header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+h1{font-family:var(--display);font-weight:400;font-size:26px;margin:0;letter-spacing:.5px}
+.chip{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:var(--panel)}
+.chip.on{color:var(--c3);border-color:var(--c3)}
+
+.stats{display:grid;grid-template-columns:1.3fr 1fr 1fr;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.stat{padding:10px 12px;display:flex;flex-direction:column;gap:2px;border-left:1px solid var(--line)}
+.stat:first-child{border-left:0}
+.stat .k{font-size:11px;color:var(--muted);letter-spacing:.06em}
+.stat .v{font-family:var(--display);font-size:28px;line-height:1.1}
+.stat .v small{font-family:var(--body);font-size:12px;color:var(--muted);margin-left:2px}
+
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{position:relative;border-radius:18px;background:var(--sp);color:var(--onc);min-height:190px;display:flex;flex-direction:column;overflow:hidden;user-select:none;touch-action:manipulation}
+.tiles.one .tile{grid-column:1/-1}
+.tile .tap{flex:1;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;padding:14px 14px 10px;text-align:left;color:inherit}
+.tile .name{font-weight:700;font-size:17px}
+.tile .cnt{font-family:var(--display);font-size:68px;line-height:1}
+.tile .last{font-size:12px;opacity:.85}
+.tile .plus{position:absolute;right:12px;top:10px;font-family:var(--display);font-size:22px;opacity:.75}
+.tile .minus{border-top:1px solid color-mix(in srgb,var(--onc) 30%,transparent);padding:10px;font-size:14px;font-weight:700;color:inherit;background:color-mix(in srgb,#000 12%,transparent)}
+.tile.bump .cnt{animation:bump .22s ease-out}
+@keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion: reduce){.tile.bump .cnt{animation:none}}
+
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.btn{flex:1;min-width:120px;padding:13px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);font-weight:700;font-size:15px}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn:disabled{opacity:.4;cursor:default}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.card h2{margin:0;font-size:14px;font-weight:700;display:flex;justify-content:space-between;align-items:baseline}
+.card h2 span{font-weight:400;font-size:12px;color:var(--muted)}
+.empty{color:var(--muted);font-size:13px}
+
+.bars{display:flex;align-items:flex-end;gap:6px;height:110px;overflow-x:auto;padding-top:14px}
+.bar{flex:1 0 30px;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end}
+.bar .stack{width:100%;display:flex;flex-direction:column-reverse;border-radius:5px 5px 0 0;overflow:hidden;min-height:2px;background:var(--line)}
+.bar .stack i{display:block}
+.bar .n{font-size:11px;font-weight:700}
+.bar .h{font-size:11px;color:var(--muted)}
+
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;max-height:220px;overflow-y:auto}
+.log li{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+.log li:last-child{border-bottom:0}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:middle}
+
+.trip{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.trip:last-child{border-bottom:0}
+.trip .d{font-weight:700;font-size:14px}
+.trip .t{font-family:var(--display);font-size:24px;grid-row:span 2;align-self:center}
+.trip .s{font-size:12px;color:var(--muted)}
+
+.confirm{border:1px solid var(--danger);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;background:color-mix(in srgb,var(--danger) 7%,var(--panel))}
+.confirm p{margin:0;font-size:14px}
+
+.sp-list{display:flex;flex-direction:column;gap:6px}
+.sp-item{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}
+.sp-item button{font-size:13px;color:var(--danger)}
+.add{display:flex;gap:8px}
+.add input{flex:1;min-width:0;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+.toggles{display:flex;flex-direction:column;gap:8px}
+.toggles label{display:flex;justify-content:space-between;align-items:center;font-size:14px}
+.toggles input{width:20px;height:20px;accent-color:var(--c3)}
+
+/* 전체 통계: db 'trips' 기준 자동 계산 */
+.sum{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.sum div{background:var(--panel);padding:8px 10px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.sum .k{font-size:11px;color:var(--muted);letter-spacing:.06em}
+.sum .v{font-family:var(--display);font-size:22px;line-height:1.1}
+.sum .v small{font-family:var(--body);font-size:11px;color:var(--muted);margin-left:2px}
+.sum .x{font-size:11px;color:var(--muted)}
+@media (max-width:420px){.sum{grid-template-columns:1fr 1fr}}
+.tscroll{overflow-x:auto;margin:0 -2px}
+.st{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+.st th{font-size:11px;font-weight:500;color:var(--muted);text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);letter-spacing:.04em}
+.st td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.st th:first-child,.st td:first-child{text-align:left;padding-left:2px}
+.st tr:last-child td{border-bottom:0}
+.st tfoot td{font-weight:700;border-top:2px solid var(--line);border-bottom:0}
+.st .best{font-weight:700;color:var(--c1)}
+.sub{font-size:12px;font-weight:700;color:var(--muted);margin:4px 0 -4px}
+
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+.toast.show{opacity:1}
+@media (max-width:360px){.tile .cnt{font-size:54px}.stat .v{font-size:24px}}
+</style>
+</head><body>
+<div class="wrap">
+  <header>
+    <h1>방울 쭈갑 카운터</h1>
+    <button class="chip" id="wakeChip" type="button">화면 켜짐 유지 꺼짐</button>
+  </header>
+
+  <section class="stats" aria-label="오늘 조과 요약">
+    <div class="stat"><span class="k">총 조과</span><span class="v num" id="sTotal">0<small>수</small></span></div>
+    <div class="stat"><span class="k">경과</span><span class="v num" id="sTime">--:--</span></div>
+    <div class="stat"><span class="k">시간당</span><span class="v num" id="sRate">0<small>수/h</small></span></div>
+  </section>
+
+  <section class="tiles" id="tiles" aria-label="어종별 카운터"></section>
+
+  <div class="row">
+    <button class="btn" id="undoBtn" type="button">마지막 기록 취소</button>
+    <button class="btn primary" id="endBtn" type="button">출조 종료·저장</button>
+  </div>
+  <div id="confirmBox" hidden></div>
+
+  <section class="card">
+    <h2>시간대별 조과 <span id="barHint">1시간 단위</span></h2>
+    <div class="bars" id="bars"></div>
+  </section>
+
+  <section class="card">
+    <h2>오늘 기록 <span id="logCount"></span></h2>
+    <ul class="log" id="log"></ul>
+  </section>
+
+  <section class="card" aria-label="전체 출조 통계">
+    <h2>전체 통계 <span id="statHint">저장된 출조 기준</span></h2>
+    <div id="allStats"><p class="empty">출조를 저장하면 회차·어종별 합계와 평균이 여기에 계산됨</p></div>
+  </section>
+
+  <section class="card">
+    <h2>지난 출조 <span id="tripCount"></span></h2>
+    <p class="empty" id="syncNote" hidden></p>
+    <div id="trips"></div>
+  </section>
+
+  <section class="card">
+    <h2>설정</h2>
+    <div class="sp-list" id="spList"></div>
+    <form class="add" id="addForm">
+      <input id="spName" maxlength="8" placeholder="어종 추가 (예: 낙지)" autocomplete="off">
+      <button class="btn" type="submit" style="flex:0 0 auto;min-width:72px">추가</button>
+    </form>
+    <div class="toggles">
+      <label for="vibToggle">입력 시 진동<input type="checkbox" id="vibToggle"></label>
+    </div>
+    <button class="btn danger" id="wipeBtn" type="button">지난 출조 기록 전체 삭제</button>
+  </section>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+const KEY='jjunak-counter-v1';
+const COLORS=['var(--c1)','var(--c2)','var(--c3)','var(--c4)'];
+const def={species:[{id:'jju',name:'쭈꾸미'},{id:'gap',name:'갑오징어'}],log:[],start:null,trips:[],vib:true};
+let S;
+try{S=JSON.parse(localStorage.getItem(KEY))||def}catch(e){S=def}
+S=Object.assign({},def,S);
+/* 이전 버전 기본 어종(낙지) → 갑오징어로 이전 */
+S.species.forEach(s=>{if(s.id==='nak'&&s.name==='낙지'){s.name='갑오징어'}});
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+/* 출조 기록 클라우드 동기화: 기기 저장(오프라인) 우선, 연결 시 db 'trips' 커렉션과 병합. 문서 id = 시작 분 단위 */
+const tid=t=>'t'+Math.floor(t/60000);
+S.trips=Array.isArray(S.trips)?S.trips:[];
+S.trips.forEach(t=>{if(!t.id)t.id=tid(t.start)});
+S.synced=Array.isArray(S.synced)?S.synced:[];
+/* 저장소: 구글 시트(Apps Script 웹 앱, config.js). 링크가 있는 누구나 저장 가능 */
+const API=(window.JJUGAP_CONFIG||{}).api||'';
+const SAME=5*60000; /* 시작 시각 5분 안쪽이면 같은 출조 */
+let remote=null;const inflight=new Set();
+const sumCounts=c=>Object.values(c||{}).reduce((a,b)=>a+(Number(b)||0),0);
+function setSync(m){const n=document.getElementById('syncNote');if(!n)return;n.hidden=!m;n.textContent=m||''}
+const isRemote=t=>remote.has(t.id)||[...remote.values()].some(r=>Math.abs(r.start-t.start)<=SAME);
+function merge(){
+  const ids=new Set(remote.keys());
+  /* 다른 기기에서 지운 기록은 빼고, 아직 안 올린 이 기기 기록은 남겨 둠 */
+  S.trips=S.trips.filter(t=>ids.has(t.id)||!S.synced.includes(t.id));
+  S.trips=S.trips.filter(t=>ids.has(t.id)||!isRemote(t));
+  const m=new Map(S.trips.map(t=>[t.id,t]));
+  remote.forEach((t,id)=>m.set(id,t));
+  S.trips=[...m.values()].sort((a,b)=>a.start-b.start);
+  S.synced=[...ids];save();
+}
+const pending=()=>remote?S.trips.filter(t=>!isRemote(t)):[];
+async function post(body){
+  const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({store:'trips'},body))});
+  return r.json();
+}
+async function uploadTrip(t){
+  if(!API||!remote||inflight.has(t.id))return;
+  inflight.add(t.id);
+  try{
+    const res=await post({op:'put',trip:{id:t.id,start:t.start,end:t.end,counts:t.counts,total:sumCounts(t.counts)}});
+    if(!res||!res.ok)throw new Error(res&&res.error||'fail');
+    const saved=Object.assign({},res.trip);
+    S.trips=S.trips.filter(x=>x!==t&&x.id!==saved.id);S.trips.push(saved);S.trips.sort((a,b)=>a.start-b.start);
+    remote.set(saved.id,saved);if(!S.synced.includes(saved.id))S.synced.push(saved.id);
+    save();renderAll();if(!pending().length)setSync('');
+  }
+  catch(e){setSync('클라우드 저장 실패: 이 기기에 보관, 다음 접속 때 다시 올림')}
+  finally{inflight.delete(t.id)}
+}
+async function sync(){
+  if(!API){setSync('클라우드 연결 없음: 이 기기에만 저장 중');return}
+  try{
+    const res=await fetch(API+'?store=trips',{cache:'no-store'}).then(r=>r.json());
+    remote=new Map((res.trips||[]).map(t=>[t.id,{id:t.id,start:t.start,end:t.end,counts:t.counts||{},total:t.total||0}]));
+    merge();renderAll();
+    const p=pending();setSync(p.length?'이 기기 기록 '+p.length+'건 올리는 중…':'');
+    for(const t of p)await uploadTrip(t);
+  }catch(e){if(!remote)setSync('클라우드 연결 안 됨: 이 기기에만 저장 중, 다음 접속 때 올림')}
+}
+const $=id=>document.getElementById(id);
+const colorOf=id=>{const i=S.species.findIndex(s=>s.id===id);return COLORS[(i<0?0:i)%COLORS.length]};
+const nameOf=id=>(S.species.find(s=>s.id===id)||{name:'삭제된 어종'}).name;
+const hm=t=>{const d=new Date(t);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+const counts=()=>{const c={};S.species.forEach(s=>c[s.id]=0);S.log.forEach(l=>{c[l.sp]=(c[l.sp]||0)+1});return c};
+let toastT;
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),1400)}
+function buzz(ms){if(!S.vib)return;try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}}
+
+function renderTiles(){
+  const c=counts(),box=$('tiles');
+  box.className='tiles'+(S.species.length===1?' one':'');
+  box.innerHTML='';
+  S.species.forEach((s,i)=>{
+    const last=[...S.log].reverse().find(l=>l.sp===s.id);
+    const el=document.createElement('div');
+    el.className='tile';el.style.setProperty('--sp',COLORS[i%COLORS.length]);el.dataset.id=s.id;
+    el.innerHTML=`<button class="tap" type="button" aria-label="${s.name} 1수 추가">
+        <span class="name">${s.name}</span>
+        <span class="cnt num">${c[s.id]||0}</span>
+        <span class="last">${last?'마지막 '+hm(last.t):'눌러서 +1'}</span>
+      </button><span class="plus" aria-hidden="true">+1</span>
+      <button class="minus" type="button" aria-label="${s.name} 1수 빼기">−1</button>`;
+    el.querySelector('.tap').onclick=()=>add(s.id);
+    el.querySelector('.minus').onclick=()=>sub(s.id);
+    box.appendChild(el);
+  });
+}
+function renderStats(){
+  const total=S.log.length;
+  $('sTotal').innerHTML=total+'<small>수</small>';
+  if(!S.start){$('sTime').textContent='--:--';$('sRate').innerHTML='0<small>수/h</small>';return}
+  const ms=Date.now()-S.start,m=Math.floor(ms/60000);
+  $('sTime').textContent=Math.floor(m/60)+':'+String(m%60).padStart(2,'0');
+  const h=Math.max(ms/3600000,1/6);
+  $('sRate').innerHTML=(total/h).toFixed(1)+'<small>수/h</small>';
+}
+function renderBars(){
+  const box=$('bars');
+  if(!S.log.length){box.innerHTML='<p class="empty">첫 조과를 누르면 시간대별 막대가 나타남</p>';return}
+  const first=new Date(S.log[0].t);first.setMinutes(0,0,0);
+  const lastH=new Date();lastH.setMinutes(0,0,0);
+  const hours=[];for(let t=first.getTime();t<=lastH.getTime();t+=3600000)hours.push(t);
+  const per=hours.map(h=>{const o={};S.log.forEach(l=>{if(l.t>=h&&l.t<h+3600000)o[l.sp]=(o[l.sp]||0)+1});return o});
+  const max=Math.max(1,...per.map(o=>Object.values(o).reduce((a,b)=>a+b,0)));
+  box.innerHTML=hours.map((h,i)=>{
+    const o=per[i],tot=Object.values(o).reduce((a,b)=>a+b,0);
+    const segs=S.species.map(s=>o[s.id]?`<i style="height:${o[s.id]/max*80}px;background:${colorOf(s.id)}"></i>`:'').join('');
+    return `<div class="bar"><span class="n num">${tot||''}</span><div class="stack" style="${tot?'background:none':''}">${segs}</div><span class="h num">${new Date(h).getHours()}시</span></div>`;
+  }).join('');
+}
+function renderLog(){
+  const ul=$('log');$('logCount').textContent=S.log.length?S.log.length+'건':'';
+  if(!S.log.length){ul.innerHTML='<li class="empty">아직 기록 없음. 위 어종 칸을 누르면 시각과 함께 쌓임</li>';return}
+  ul.innerHTML=[...S.log].reverse().map((l,i)=>`<li><span><span class="dot" style="background:${colorOf(l.sp)}"></span>${nameOf(l.sp)}</span><span class="num" style="color:var(--muted)">${hm(l.t)} · ${S.log.length-i}번째</span></li>`).join('');
+}
+function renderTrips(){
+  const box=$('trips');$('tripCount').textContent=S.trips.length?S.trips.length+'회':'';
+  if(!S.trips.length){box.innerHTML='<p class="empty">출조 종료·저장을 누르면 여기에 날짜별로 남음</p>';return}
+  box.innerHTML=[...S.trips].reverse().map(t=>{
+    const d=new Date(t.start),dur=Math.round((t.end-t.start)/60000);
+    const parts=Object.entries(t.counts).filter(([,n])=>n).map(([k,n])=>k+' '+n).join(' · ')||'조과 없음';
+    return `<div class="trip"><span class="d">${d.getMonth()+1}월 ${d.getDate()}일 (${'일월화수목금토'[d.getDay()]}) ${hm(t.start)}–${hm(t.end)}</span><span class="t num">${t.total}수</span><span class="s">${parts} · ${Math.floor(dur/60)}시간 ${dur%60}분</span></div>`;
+  }).join('');
+}
+function renderSettings(){
+  $('vibToggle').checked=!!S.vib;
+  $('spList').innerHTML=S.species.map((s,i)=>`<div class="sp-item"><span><span class="dot" style="background:${COLORS[i%COLORS.length]}"></span>${s.name}</span>${S.species.length>1?`<button type="button" data-del="${s.id}">빼기</button>`:''}</div>`).join('');
+  $('spList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.del;if(S.log.some(l=>l.sp===id)){toast('오늘 기록이 있는 어종은 출조 저장 후 빼기 가능');return}
+    S.species=S.species.filter(s=>s.id!==id);save();renderAll();
+  });
+}
+function renderAllStats(){
+  const box=$('allStats'),T=[...S.trips].filter(t=>t&&t.start).sort((a,b)=>a.start-b.start);
+  if(!T.length){box.innerHTML='<p class="empty">출조를 저장하면 회차·어종별 합계와 평균이 여기에 계산됨</p>';return}
+  const esc=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  /* 어종 순서: 현재 카운터 어종 먼저, 그다음 기록에만 있는 어종 */
+  const sp=S.species.map(s=>s.name);
+  T.forEach(t=>Object.keys(t.counts||{}).forEach(k=>{if(!sp.includes(k))sp.push(k)}));
+  const col=k=>{const i=S.species.findIndex(s=>s.name===k);return COLORS[(i<0?sp.indexOf(k):i)%COLORS.length]};
+  const n=k=>t=>Number((t.counts||{})[k])||0;
+  const tot=t=>Number(t.total)||0;
+  const hrs=t=>Math.max((t.end-t.start)/3600000,0);
+  const md=t=>{const d=new Date(t.start);return (d.getMonth()+1)+'/'+d.getDate()+'('+'일월화수목금토'[d.getDay()]+')'};
+  const dur=h=>{const m=Math.round(h*60);return Math.floor(m/60)+':'+String(m%60).padStart(2,'0')};
+  const sumAll=T.reduce((a,t)=>a+tot(t),0),sumH=T.reduce((a,t)=>a+hrs(t),0);
+  const best=T.reduce((b,t)=>tot(t)>tot(b)?t:b,T[0]);
+  const rate=(c,h)=>h>0?(c/h).toFixed(1):'–';
+  let h=`<div class="sum">
+    <div><span class="k">출조</span><span class="v num">${T.length}<small>회</small></span><span class="x">${dur(sumH)} 낚시</span></div>
+    <div><span class="k">총 조과</span><span class="v num">${sumAll}<small>수</small></span><span class="x">시간당 ${rate(sumAll,sumH)}수</span></div>
+    <div><span class="k">회당 평균</span><span class="v num">${(sumAll/T.length).toFixed(1)}<small>수</small></span><span class="x">&nbsp;</span></div>
+    <div><span class="k">최고 기록</span><span class="v num">${tot(best)}<small>수</small></span><span class="x">${md(best)}</span></div>
+  </div>`;
+  h+=`<p class="sub">어종별</p><div class="tscroll"><table class="st"><thead><tr><th>어종</th><th>합계</th><th>비율</th><th>회당</th><th>최고</th></tr></thead><tbody>`;
+  sp.forEach(k=>{
+    const v=T.map(n(k)),s=v.reduce((a,b)=>a+b,0),mx=Math.max(...v);
+    h+=`<tr><td><span class="dot" style="background:${col(k)}"></span>${esc(k)}</td><td>${s}</td><td>${sumAll?Math.round(s/sumAll*100):0}%</td><td>${(s/T.length).toFixed(1)}</td><td>${mx}</td></tr>`;
+  });
+  h+=`</tbody></table></div>`;
+  h+=`<p class="sub">회차별</p><div class="tscroll"><table class="st"><thead><tr><th>날짜</th><th>시간</th>${sp.map(k=>`<th>${esc(k)}</th>`).join('')}<th>합계</th><th>수/h</th></tr></thead><tbody>`;
+  [...T].reverse().forEach(t=>{
+    h+=`<tr><td>${md(t)} <span style="color:var(--muted)">${hm(t.start)}</span></td><td>${dur(hrs(t))}</td>${sp.map(k=>`<td>${n(k)(t)}</td>`).join('')}<td class="${T.length>1&&t===best?'best':''}">${tot(t)}</td><td>${rate(tot(t),hrs(t))}</td></tr>`;
+  });
+  h+=`</tbody><tfoot><tr><td>합계</td><td>${dur(sumH)}</td>${sp.map(k=>`<td>${T.map(n(k)).reduce((a,b)=>a+b,0)}</td>`).join('')}<td>${sumAll}</td><td>${rate(sumAll,sumH)}</td></tr></tfoot></table></div>`;
+  box.innerHTML=h;
+}
+function renderAll(){renderTiles();renderStats();renderBars();renderLog();renderTrips();renderAllStats();renderSettings();$('undoBtn').disabled=!S.log.length}
+
+function bump(id){const el=document.querySelector(`.tile[data-id="${id}"]`);if(!el)return;el.classList.remove('bump');void el.offsetWidth;el.classList.add('bump')}
+function add(id){if(!S.start)S.start=Date.now();S.log.push({t:Date.now(),sp:id});save();buzz(30);renderAll();bump(id)}
+function sub(id){for(let i=S.log.length-1;i>=0;i--){if(S.log[i].sp===id){S.log.splice(i,1);save();buzz([20,40,20]);renderAll();toast(nameOf(id)+' 1수 뺌');return}}toast('뺄 기록 없음')}
+$('undoBtn').onclick=()=>{const l=S.log.pop();if(!l)return;save();buzz([20,40,20]);renderAll();toast(nameOf(l.sp)+' '+hm(l.t)+' 기록 취소')};
+
+function ask(msg,okLabel,onOk){
+  const b=$('confirmBox');b.hidden=false;
+  b.innerHTML=`<div class="confirm"><p>${msg}</p><div class="row"><button class="btn" type="button" id="cNo">취소</button><button class="btn danger" type="button" id="cYes">${okLabel}</button></div></div>`;
+  $('cNo').onclick=()=>{b.hidden=true};
+  $('cYes').onclick=()=>{b.hidden=true;onOk()};
+  b.scrollIntoView({behavior:'smooth',block:'center'});
+}
+$('endBtn').onclick=()=>{
+  if(!S.log.length){toast('저장할 조과 없음');return}
+  const c=counts(),named={};S.species.forEach(s=>named[s.name]=c[s.id]||0);
+  ask(`오늘 ${S.log.length}수(${Object.entries(named).filter(([,n])=>n).map(([k,n])=>k+' '+n).join(', ')}) 저장하고 카운터를 0으로 되돌림`,'저장하고 초기화',()=>{
+    const st=S.start||S.log[0].t;const tr={id:tid(st),start:st,end:Date.now(),counts:named,total:sumCounts(named)};
+    S.trips.push(tr);
+    S.log=[];S.start=null;save();renderAll();toast('출조 기록 저장됨');uploadTrip(tr);
+  });
+};
+$('wipeBtn').onclick=()=>{
+  if(!S.trips.length){toast('삭제할 기록 없음');return}
+  ask(`지난 출조 ${S.trips.length}회 기록을 모두 지움. 되돌릴 수 없음`,'전체 삭제',async()=>{
+    const ids=remote?[...remote.keys()]:[];
+    S.trips=[];S.synced=[];save();renderAll();
+    if(API&&ids.length){try{const r=await post({op:'delete',ids});if(!r.ok)throw 0;remote=new Map()}catch(e){toast('클라우드 삭제 실패');return}}
+    toast('지난 기록 삭제됨');
+  });
+};
+$('addForm').addEventListener('submit',e=>{
+  e.preventDefault();const n=$('spName').value.trim();if(!n)return;
+  if(S.species.some(s=>s.name===n)){toast('이미 있는 어종');return}
+  if(S.species.length>=4){toast('어종은 최대 4개');return}
+  S.species.push({id:'s'+Date.now(),name:n});$('spName').value='';save();renderAll();toast(n+' 추가됨');
+});
+$('vibToggle').onchange=e=>{S.vib=e.target.checked;save();if(S.vib)buzz(30)};
+
+let lock=null;
+async function setWake(on){
+  const chip=$('wakeChip');
+  if(!on){try{lock&&await lock.release()}catch(e){}lock=null;chip.classList.remove('on');chip.textContent='화면 켜짐 유지 꺼짐';return}
+  try{lock=await navigator.wakeLock.request('screen');chip.classList.add('on');chip.textContent='화면 켜짐 유지 중';
+    lock.addEventListener('release',()=>{if(lock){chip.classList.remove('on');chip.textContent='화면 켜짐 유지 꺼짐'}})}
+  catch(e){toast('이 기기에선 화면 켜짐 유지 불가');lock=null}
+}
+$('wakeChip').onclick=()=>setWake(!lock);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&$('wakeChip').classList.contains('on')===false&&lock){setWake(true)}});
+
+renderAll();
+setInterval(renderStats,20000);
+
+sync();
+/* 배 위에서 끊겼다가 다시 연결되거나 화면으로 돌아오면 다시 맞춤 */
+window.addEventListener('online',sync);
+let lastSync=Date.now();
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastSync>60000){lastSync=Date.now();sync()}});
+})();
+</script>
+</body></html>
