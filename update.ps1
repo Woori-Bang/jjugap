@@ -23,7 +23,7 @@ if ($html.Contains($anchor)) {
 }
 if (-not $html.Contains('src="edit.js"')) {
     $i = $html.LastIndexOf('</body>')
-    $tag = '<script src="config.js"></script><script src="edit.js"></script>'
+    $tag = '<script src="/menu.js"></script><script src="config.js"></script><script src="edit.js"></script>'
     if ($i -ge 0) { $html = $html.Insert($i, $tag + "`n") } else { $html += $tag }
 }
 [IO.File]::WriteAllText((Join-Path $repo 'index.html'), $html, $utf8)
