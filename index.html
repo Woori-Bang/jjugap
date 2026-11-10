@@ -441,8 +441,9 @@ tr.store td{background:var(--squid-soft);font-weight:700;color:var(--squid);bord
   cartBtn.addEventListener('click',function(){ showView(cartView.hidden); });
   if(location.hash==='#cart') showView(true);
 
-  render(window.__ORDERS__); renderCart(window.__CART__||[]);
+  window.__jjugapRender=function(){ render(window.__ORDERS__||[]); renderCart(window.__CART__||[]); }; window.__jjugapRender();
 })();
 </script>
 
+<script src="config.js"></script><script src="edit.js"></script>
 </body></html>
