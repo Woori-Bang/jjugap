@@ -29,6 +29,7 @@ function out_(o) {
 
 function doGet(e) {
   if (e && e.parameter && e.parameter.store === 'trips') return out_({ trips: readTrips_() });
+  if (e && e.parameter && e.parameter.store === 'ym') return out_({ ym: readYm_() });
   return out_(read_());
 }
 
@@ -89,6 +90,7 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
     if (body.store === 'trips') return out_(tripPost_(body));
+    if (body.store === 'ym') return out_(ymPost_(body));
     var cur = read_();
     if (!body.force && body.version !== cur.version) {
       cur.ok = false; cur.conflict = true;
@@ -117,4 +119,84 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/* ---- 영맨 쭈갑 카운터: 'ym_species' / 'ym_catches' / 'ym_trips' 시트 ----
+   한 줄 = 문서 하나 (A열 id). 같은 id로 다시 보내면 덮어써서 중복이 안 생겨요. */
+var YM_COLS = {
+  species: [['name', 's'], ['order', 'n']],
+  catches: [['t', 'n'], ['sp', 's'], ['tripId', 's']],
+  trips: [['start', 'n'], ['end', 'n'], ['total', 'n'], ['counts', 'j']]
+};
+var YM_ID = /^[A-Za-z0-9_\-.~:@+]{1,200}$/;
+
+function ymSheet_(col) {
+  var s = sheet_('ym_' + col);
+  if (!s.getLastRow()) s.appendRow(['id'].concat(YM_COLS[col].map(function (f) { return f[0]; })));
+  return s;
+}
+
+function ymRows_(col) {
+  var s = ymSheet_(col), n = s.getLastRow(), w = YM_COLS[col].length + 1;
+  return { s: s, w: w, vals: n < 2 ? [] : s.getRange(2, 1, n - 1, w).getValues() };
+}
+
+function ymDecode_(col, r) {
+  var o = { id: String(r[0]) };
+  YM_COLS[col].forEach(function (f, i) {
+    var v = r[i + 1];
+    if (f[1] === 'n') o[f[0]] = Number(v) || 0;
+    else if (f[1] === 'j') { try { o[f[0]] = JSON.parse(String(v).replace(/^x/, '')) || {}; } catch (err) { o[f[0]] = {}; } }
+    else o[f[0]] = String(v);
+  });
+  return o;
+}
+
+function ymEncode_(col, id, d) {
+  d = d || {};
+  return [String(id)].concat(YM_COLS[col].map(function (f) {
+    var v = d[f[0]];
+    if (f[1] === 'n') return String(Number(v) || 0);
+    if (f[1] === 'j') return 'x' + JSON.stringify(v && typeof v === 'object' ? v : {});
+    return String(v == null ? '' : v).slice(0, 200);
+  }));
+}
+
+function readYm_() {
+  var out = {};
+  ['species', 'trips'].forEach(function (col) {
+    out[col] = ymRows_(col).vals.filter(function (r) { return r[0]; }).map(function (r) { return ymDecode_(col, r); });
+  });
+  out.catchCount = ymRows_('catches').vals.filter(function (r) { return r[0]; }).length;
+  return out;
+}
+
+function ymPost_(body) {
+  if (body.op !== 'batch' || !Array.isArray(body.ops) || body.ops.length > 200) return { ok: false, error: 'bad op' };
+  var byCol = {};
+  for (var i = 0; i < body.ops.length; i++) {
+    var o = body.ops[i] || {};
+    if (!YM_COLS[o.col] || !YM_ID.test(String(o.id || '')) || (o.op !== 'set' && o.op !== 'del')) return { ok: false, error: 'bad op ' + i };
+    (byCol[o.col] = byCol[o.col] || []).push(o);
+  }
+  Object.keys(byCol).forEach(function (col) {
+    var t = ymRows_(col), order = [], map = {};
+    t.vals.forEach(function (r) { var id = String(r[0]); if (id && !map[id]) { map[id] = r; order.push(id); } });
+    byCol[col].forEach(function (o) {
+      var id = String(o.id);
+      if (o.op === 'del') { delete map[id]; return; }
+      if (!map[id]) order.push(id);
+      map[id] = ymEncode_(col, id, o.data);
+    });
+    var seen = {}, rows = order.filter(function (id) { if (!map[id] || seen[id]) return false; seen[id] = 1; return true; }).map(function (id) { return map[id].map(String); });
+    var s = t.s, old = t.vals.length;
+    if (old) s.getRange(2, 1, old, t.w).clearContent();
+    if (rows.length) {
+      var rg = s.getRange(2, 1, rows.length, t.w);
+      rg.setNumberFormat('@');
+      rg.setValues(rows);
+    }
+    if (old > rows.length) s.deleteRows(2 + rows.length, old - rows.length);
+  });
+  return { ok: true, ym: true, n: body.ops.length };
 }
