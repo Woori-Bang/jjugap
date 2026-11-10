@@ -123,6 +123,18 @@ h1{font-family:var(--display);font-weight:400;font-size:26px;margin:0;letter-spa
 .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
 .toast.show{opacity:1}
 @media (max-width:360px){.tile .cnt{font-size:54px}.stat .v{font-size:24px}}
+/* −1: 길게 눌러(0.6초) 확인 창에서 빼기 */
+.tile .minus{position:relative;overflow:hidden;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+.tile .minus small{font-weight:500;font-size:12px;opacity:.8;margin-left:4px}
+.tile .minus::after{content:"";position:absolute;inset:0;background:color-mix(in srgb,var(--onc) 30%,transparent);transform:scaleX(0);transform-origin:left;pointer-events:none}
+.tile .minus.holding::after{transform:scaleX(1);transition:transform .6s linear}
+.hold-back{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}
+.hold-box{background:var(--panel);color:var(--ink);width:100%;max-width:560px;border-radius:20px 20px 0 0;padding:22px 16px calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:16px;box-shadow:0 -4px 20px rgba(0,0,0,.25)}
+.hold-box p{margin:0;font-size:21px;font-weight:700;text-align:center}
+.hold-box .r{display:flex;gap:10px}
+.hold-box button{flex:1;min-height:62px;border-radius:14px;font-size:19px;font-weight:700;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.hold-box button.ok{background:var(--danger);border-color:var(--danger);color:var(--onc)}
+@media (prefers-reduced-motion: reduce){.tile .minus.holding::after{transition:none}}
 </style>
 </head><body>
 <div class="wrap">
@@ -252,6 +264,38 @@ let toastT;
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),1400)}
 function buzz(ms){if(!S.vib)return;try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}}
 
+/* −1: 짧게 누르면 안내만, 0.6초 길게 누르면 확인 창 → [빼기]를 눌러야 1수 빠짐 */
+const HOLD_MS=600;
+function confirmSub(name,onOk){
+  const old=document.querySelector('.hold-back');if(old)old.remove();
+  const back=document.createElement('div');back.className='hold-back';
+  back.innerHTML='<div class="hold-box" role="alertdialog" aria-modal="true" aria-labelledby="holdQ"><p id="holdQ"></p><div class="r"><button type="button" class="no">취소</button><button type="button" class="ok">빼기</button></div></div>';
+  back.querySelector('#holdQ').textContent=name+' 1마리 빼기?';
+  const key=e=>{if(e.key==='Escape')close()};
+  const close=()=>{back.remove();document.removeEventListener('keydown',key)};
+  back.addEventListener('click',e=>{if(e.target===back)close()});
+  back.querySelector('.no').onclick=close;
+  back.querySelector('.ok').onclick=()=>{close();onOk()};
+  document.addEventListener('keydown',key);
+  document.body.appendChild(back);back.querySelector('.no').focus();
+}
+function holdMinus(btn,name,onOk){
+  let timer=null,fired=false,x=0,y=0;
+  const stop=()=>{if(timer){clearTimeout(timer);timer=null}btn.classList.remove('holding')};
+  btn.addEventListener('contextmenu',e=>e.preventDefault());
+  btn.addEventListener('pointerdown',e=>{
+    if(e.button>0)return;fired=false;x=e.clientX;y=e.clientY;btn.classList.add('holding');
+    timer=setTimeout(()=>{timer=null;fired=true;btn.classList.remove('holding');buzz(40);confirmSub(name,onOk)},HOLD_MS);
+  });
+  btn.addEventListener('pointermove',e=>{if(timer&&Math.hypot(e.clientX-x,e.clientY-y)>12)stop()});
+  ['pointerup','pointercancel','pointerleave'].forEach(t=>btn.addEventListener(t,stop));
+  btn.addEventListener('click',e=>{
+    e.preventDefault();
+    if(fired){fired=false;return}
+    if(e.detail===0){confirmSub(name,onOk);return} /* 키보드(Enter/Space)는 바로 확인 창 */
+    toast('−1은 길게 눌러 빼기');
+  });
+}
 function renderTiles(){
   const c=counts(),box=$('tiles');
   box.className='tiles'+(S.species.length===1?' one':'');
@@ -265,9 +309,9 @@ function renderTiles(){
         <span class="cnt num">${c[s.id]||0}</span>
         <span class="last">${last?'마지막 '+hm(last.t):'눌러서 +1'}</span>
       </button><span class="plus" aria-hidden="true">+1</span>
-      <button class="minus" type="button" aria-label="${s.name} 1수 빼기">−1</button>`;
+      <button class="minus" type="button" aria-label="${s.name} 길게 눌러 1수 빼기">−1<small>길게 눌러 빼기</small></button>`;
     el.querySelector('.tap').onclick=()=>add(s.id);
-    el.querySelector('.minus').onclick=()=>sub(s.id);
+    holdMinus(el.querySelector('.minus'),s.name,()=>sub(s.id));
     box.appendChild(el);
   });
 }
