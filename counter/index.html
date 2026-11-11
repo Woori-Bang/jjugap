@@ -135,6 +135,16 @@ h1{font-family:var(--display);font-weight:400;font-size:26px;margin:0;letter-spa
 .hold-box button{flex:1;min-height:62px;border-radius:14px;font-size:19px;font-weight:700;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
 .hold-box button.ok{background:var(--danger);border-color:var(--danger);color:var(--onc)}
 @media (prefers-reduced-motion: reduce){.tile .minus.holding::after{transition:none}}
+/* 출항·귀항 */
+.voyage{display:flex;flex-direction:column;gap:6px}
+.vbtn{width:100%;min-height:66px;border-radius:16px;font-size:23px;font-weight:700;background:var(--c3);color:var(--onc);border:0;touch-action:manipulation}
+.vhint{margin:0;font-size:12px;color:var(--muted);text-align:center}
+.vbar{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:15px}
+.vbar b{font-variant-numeric:tabular-nums}
+.vundo{font-size:13px;color:var(--muted);text-decoration:underline;padding:8px 4px;flex:0 0 auto}
+#endBtn{min-height:58px;font-size:17px}
+.hold-box .s{margin:-6px 0 0;font-size:15px;font-weight:400;color:var(--muted);white-space:pre-line;line-height:1.6}
+.hold-box button.ok.save{background:var(--ink);border-color:var(--ink);color:var(--bg)}
 </style>
 </head><body>
 <div class="wrap">
@@ -149,11 +159,13 @@ h1{font-family:var(--display);font-weight:400;font-size:26px;margin:0;letter-spa
     <div class="stat"><span class="k">시간당</span><span class="v num" id="sRate">0<small>수/h</small></span></div>
   </section>
 
+  <section class="voyage" id="voyage" aria-label="출항·귀항"></section>
+
   <section class="tiles" id="tiles" aria-label="어종별 카운터"></section>
 
   <div class="row">
     <button class="btn" id="undoBtn" type="button">마지막 기록 취소</button>
-    <button class="btn primary" id="endBtn" type="button">출조 종료·저장</button>
+    <button class="btn primary" id="endBtn" type="button">⚓ 귀항·저장</button>
   </div>
   <div id="confirmBox" hidden></div>
 
@@ -315,7 +327,39 @@ function renderTiles(){
     box.appendChild(el);
   });
 }
-function renderStats(){
+/* 출항·귀항: 🚤 출항을 누른 시각이 출조 시작. 출항 전에 어종을 눌러도 자동으로 시작됨 */
+function depart(){if(S.start)return;S.start=Date.now();save();buzz(40);renderAll();toast('🚤 출항 '+hm(S.start))}
+function renderVoyage(){
+  const v=document.getElementById('voyage');if(!v)return;
+  if(!S.start){
+    v.innerHTML='<button class="vbtn" type="button" id="goBtn">🚤 출항</button><p class="vhint">배가 출발할 때 눌러요 · 그냥 어종을 눌러도 자동으로 시작돼요</p>';
+    document.getElementById('goBtn').onclick=depart;return;
+  }
+  const m=Math.max(0,Math.floor((Date.now()-S.start)/60000));
+  v.innerHTML='<div class="vbar"><span>🚤 출항 <b>'+hm(S.start)+'</b> · 경과 <b>'+Math.floor(m/60)+'시간 '+(m%60)+'분</b></span>'+(S.log.length?'':'<button type="button" class="vundo" id="goUndo">출항 취소</button>')+'</div>';
+  const u=document.getElementById('goUndo');if(u)u.onclick=()=>{S.start=null;save();renderAll();toast('출항 취소')};
+}
+function sheet(title,sub,okLabel,onOk,okCls){
+  const old=document.querySelector('.hold-back');if(old)old.remove();
+  const back=document.createElement('div');back.className='hold-back';
+  back.innerHTML='<div class="hold-box" role="alertdialog" aria-modal="true" aria-labelledby="sheetQ"><p id="sheetQ"></p><p class="s"></p><div class="r"><button type="button" class="no">취소</button><button type="button" class="ok '+(okCls||'')+'"></button></div></div>';
+  back.querySelector('#sheetQ').textContent=title;
+  const s=back.querySelector('.s');if(sub)s.textContent=sub;else s.remove();
+  back.querySelector('.ok').textContent=okLabel;
+  const key=e=>{if(e.key==='Escape')close()};
+  const close=()=>{back.remove();document.removeEventListener('keydown',key)};
+  back.addEventListener('click',e=>{if(e.target===back)close()});
+  back.querySelector('.no').onclick=close;
+  back.querySelector('.ok').onclick=()=>{close();onOk()};
+  document.addEventListener('keydown',key);
+  document.body.appendChild(back);back.querySelector('.no').focus();
+}
+function voyageSheet(onOk){
+  const c=counts(),parts=S.species.map(s=>[s.name,c[s.id]||0]).filter(([,k])=>k).map(([k,v])=>k+' '+v);
+  const st=S.start||(S.log[0]&&S.log[0].t)||Date.now(),m=Math.max(0,Math.floor((Date.now()-st)/60000));
+  sheet('⚓ 귀항·저장할까요?','출항 '+hm(st)+' · '+Math.floor(m/60)+'시간 '+(m%60)+'분\n'+(parts.join(' · ')||'조과 없음')+' (총 '+S.log.length+'수)\n저장하면 카운터가 0으로 돌아가요','귀항·저장',onOk,'save');
+}
+function renderStats(){renderVoyage();
   const total=S.log.length;
   $('sTotal').innerHTML=total+'<small>수</small>';
   if(!S.start){$('sTime').textContent='--:--';$('sRate').innerHTML='0<small>수/h</small>';return}
@@ -402,7 +446,9 @@ function add(id){if(!S.start)S.start=Date.now();S.log.push({t:Date.now(),sp:id})
 function sub(id){for(let i=S.log.length-1;i>=0;i--){if(S.log[i].sp===id){S.log.splice(i,1);save();buzz([20,40,20]);renderAll();toast(nameOf(id)+' 1수 뺌');return}}toast('뺄 기록 없음')}
 $('undoBtn').onclick=()=>{const l=S.log.pop();if(!l)return;save();buzz([20,40,20]);renderAll();toast(nameOf(l.sp)+' '+hm(l.t)+' 기록 취소')};
 
+let askMode='';
 function ask(msg,okLabel,onOk){
+  if(askMode==='voyage'){askMode='';return voyageSheet(onOk)}
   const b=$('confirmBox');b.hidden=false;
   b.innerHTML=`<div class="confirm"><p>${msg}</p><div class="row"><button class="btn" type="button" id="cNo">취소</button><button class="btn danger" type="button" id="cYes">${okLabel}</button></div></div>`;
   $('cNo').onclick=()=>{b.hidden=true};
@@ -410,7 +456,8 @@ function ask(msg,okLabel,onOk){
   b.scrollIntoView({behavior:'smooth',block:'center'});
 }
 $('endBtn').onclick=()=>{
-  if(!S.log.length){toast('저장할 조과 없음');return}
+  if(!S.log.length&&!S.start){toast('아직 출항 전이에요');return}
+  askMode='voyage';
   const c=counts(),named={};S.species.forEach(s=>named[s.name]=c[s.id]||0);
   ask(`오늘 ${S.log.length}수(${Object.entries(named).filter(([,n])=>n).map(([k,n])=>k+' '+n).join(', ')}) 저장하고 카운터를 0으로 되돌림`,'저장하고 초기화',()=>{
     const st=S.start||S.log[0].t;const tr={id:tid(st),start:st,end:Date.now(),counts:named,total:sumCounts(named)};
